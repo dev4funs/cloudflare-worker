@@ -1,4 +1,4 @@
-import { readRequestBody, getPosts, addPost } from './lib'
+import { readRequestBody, getPosts } from './lib'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,9 +56,19 @@ async function handleRequest(request) {
         response = new Response(JSON.stringify(await getPosts()))
       }
       if (request.method === 'POST') {
-        const { title, username, content } = readRequestBody(request)
-        await addPost({ title, username, content })
-        response = new Response(JSON.stringify(await getPosts()))
+        const body = await readRequestBody(request)
+        const { title, username, content } = body
+
+        let newPosts = await getPosts()
+        newPosts.unshift(body)
+
+        const key = `${new Date().getTime()}+${username}`
+        // I found there is a latency in kv.put.
+        // After I add the data, I can't get the new data immediately.
+        // So, I use a cheat way to partly fix it.
+        await KV_POSTS.put(key, JSON.stringify(body))
+
+        response = new Response(JSON.stringify(newPosts))
         response.headers.set('Content-Type', 'application/json')
       }
     }
@@ -72,10 +82,10 @@ async function handleRequest(request) {
   return response
 }
 
-addEventListener('fetch', (event) => {
+addEventListener('fetch', event => {
   event.respondWith(
     handleRequest(event.request).catch(
-      (err) => new Response(err.stack, { status: 500 }),
+      err => new Response(err.stack, { status: 500 }),
     ),
   )
 })
